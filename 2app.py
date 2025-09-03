@@ -385,7 +385,7 @@ def main():
         'HS Code': ['61112000', '61112000', '61112000'],
         'Composition': ['100% COTTON', '100% COTTON', '100% COTTON'],
         'Country of Origin': ['India', 'India', 'India'],
-        'Qty': ,
+        'Qty': [50, 100, 200],
         'Unit Price': [6.00, 6.00, 6.00],
         'Amount': [24642.00, 27558.00, 27558.00]
     }
