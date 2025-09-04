@@ -1,13 +1,7 @@
 import streamlit as st
 import pandas as pd
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-from reportlab.lib.units import inch
-import io
 from datetime import datetime
+import base64
 
 def process_excel_data(df):
     """Process Excel data to group by Style and sum quantities and values"""
@@ -25,201 +19,273 @@ def process_excel_data(df):
     
     return grouped
 
-def generate_proforma_invoice(df, pi_number="SAR/LG/0148", date_str="14-10-2024", cpo_number="CPO/47062/25"):
-    """Generate PDF invoice matching the exact reference format"""
+def generate_html_invoice(df, pi_number="SAR/LG/0148", date_str="14-10-2024", cpo_number="CPO/47062/25"):
+    """Generate HTML invoice matching the exact reference format"""
     
     # Process the data
     processed_df = process_excel_data(df)
     
-    # Create PDF in memory
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
-    elements = []
+    total_qty = processed_df['Total Qty'].sum()
+    total_amount = processed_df['Total Value'].sum()
     
-    # Create custom styles
-    styles = getSampleStyleSheet()
-    
-    # Header style
-    header_style = ParagraphStyle(
-        'CustomHeader',
-        parent=styles['Normal'],
-        fontSize=10,
-        alignment=TA_LEFT,
-        spaceAfter=3
-    )
-    
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Normal'],
-        fontSize=14,
-        alignment=TA_CENTER,
-        spaceAfter=12,
-        fontName='Helvetica-Bold'
-    )
-    
-    # Create header table with supplier and invoice info
-    header_data = [
-        ["Supplier Name No. & date of PI", f"{pi_number} Dt. {date_str}"],
-        ["SAR APPARELS INDIA PVT.LTD.", ""],
-        ["ADDRESS : 6, Picaso Bithi, KOLKATA - 700017.", f"Landmark order Reference: {cpo_number}"],
-        ["PHONE : 9874173373", "Buyer Name: LANDMARK GROUP"],
-        ["FAX : N.A.", "Brand Name: Juniors"],
-        ["Consignee:-", "Payment Term: T/T"],
-        ["RNA Resources Group Ltd- Landmark (Babyshop),", ""],
-        ["P O Box 25030, Dubai, UAE,", "Bank Details (Including Swift/IBAN)"],
-        ["Tel: 00971 4 8095500, Fax: 00971 4 8095555/66", ":- SAR APPARELS INDIA PVT.LTD"],
-        ["", ":- 2112819952"],
-        ["", "BANK'S NAME :- KOTAK MAHINDRA BANK LTD"],
-        ["", "BANK ADDRESS :- 2 BRABOURNE ROAD, GOVIND BHAVAN, GROUND FLOOR,"],
-        ["", "KOLKATA-700001"],
-        ["", ":- KKBKINBBCPC"],
-        ["", "BANK CODE :- 0323"],
-        ["Loading Country: India", "L/C Advicing Bank (If Payment term LC Applicable )"],
-        ["Port of loading: Mumbai", ""],
-        ["Agreed Shipment Date: 07-02-2025", ""],
-        ["", ""],
-        ["REMARKS if ANY:-", ""],
-        ["Description of goods: Value Packs", ""],
-        ["CURRENCY: USD", ""]
-    ]
-    
-    header_table = Table(header_data, colWidths=[4*inch, 4*inch])
-    header_table.setStyle(TableStyle([
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-    ]))
-    
-    elements.append(header_table)
-    elements.append(Spacer(1, 12))
-    
-    # Add title
-    elements.append(Paragraph("Proforma Invoice", title_style))
-    elements.append(Spacer(1, 6))
-    
-    # Create main data table
-    table_data = [
-        ["STYLE NO.", "ITEM DESCRIPTION", "FABRIC TYPE\nKNITTED /\nWOVEN", "H.S NO\n(8digit)", 
-         "COMPOSITION OF\nMATERIAL", "COUNTRY OF\nORIGIN", "QTY", "UNIT PRICE\nFOB", "AMOUNT"]
-    ]
-    
-    total_qty = 0
-    total_amount = 0
-    
+    # Generate table rows
+    table_rows = ""
     for _, row in processed_df.iterrows():
         qty = int(row['Total Qty'])
         unit_price = float(row['USD Fob$'])
         amount = float(row['Total Value'])
         
-        total_qty += qty
-        total_amount += amount
-        
-        table_data.append([
-            str(row['Style']),
-            str(row['Description']),
-            "KNITTED",  # Default to KNITTED as per reference
-            "61112000",  # Default HS code as per reference
-            str(row['Composition']),
-            "India",
-            f"{qty:,}",
-            f"{unit_price:.2f}",
-            f"{amount:.2f}"
-        ])
+        table_rows += f"""
+        <tr>
+            <td>{row['Style']}</td>
+            <td>{row['Description']}</td>
+            <td>KNITTED</td>
+            <td>61112000</td>
+            <td>{row['Composition']}</td>
+            <td>India</td>
+            <td>{qty:,}</td>
+            <td>{unit_price:.2f}</td>
+            <td>{amount:.2f}</td>
+        </tr>
+        """
     
-    # Add totals row
-    table_data.append([
-        "", "", "", "", "", "Total", f"{total_qty:,}", "", f"{total_amount:.2f}USD"
-    ])
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Proforma Invoice</title>
+        <style>
+            @page {{
+                size: A4;
+                margin: 0.5in;
+            }}
+            body {{
+                font-family: Arial, sans-serif;
+                font-size: 10px;
+                margin: 0;
+                padding: 20px;
+                line-height: 1.2;
+            }}
+            .header-table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15px;
+            }}
+            .header-table td {{
+                padding: 2px 5px;
+                vertical-align: top;
+                font-size: 9px;
+            }}
+            .title {{
+                text-align: center;
+                font-size: 14px;
+                font-weight: bold;
+                margin: 10px 0;
+            }}
+            .main-table {{
+                width: 100%;
+                border-collapse: collapse;
+                border: 2px solid black;
+                margin: 10px 0;
+            }}
+            .main-table th {{
+                background-color: #d3d3d3;
+                border: 1px solid black;
+                padding: 8px 4px;
+                text-align: center;
+                font-weight: bold;
+                font-size: 8px;
+                vertical-align: middle;
+            }}
+            .main-table td {{
+                border: 1px solid black;
+                padding: 6px 4px;
+                text-align: center;
+                font-size: 9px;
+                vertical-align: middle;
+            }}
+            .total-row {{
+                font-weight: bold;
+                font-size: 10px;
+            }}
+            .total-words {{
+                font-weight: bold;
+                margin: 10px 0;
+                font-size: 10px;
+            }}
+            .signature-section {{
+                margin-top: 30px;
+                font-size: 10px;
+            }}
+            .signature-table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            .signature-table td {{
+                padding: 5px;
+                vertical-align: top;
+            }}
+            @media print {{
+                body {{ margin: 0; }}
+                .no-print {{ display: none; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <!-- Header Section -->
+        <table class="header-table">
+            <tr>
+                <td style="width: 50%;"><strong>Supplier Name No. & date of PI</strong></td>
+                <td style="width: 50%;"><strong>{pi_number} Dt. {date_str}</strong></td>
+            </tr>
+            <tr>
+                <td><strong>SAR APPARELS INDIA PVT.LTD.</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td><strong>ADDRESS :</strong> 6, Picaso Bithi, KOLKATA - 700017.</td>
+                <td>Landmark order Reference: <strong>{cpo_number}</strong></td>
+            </tr>
+            <tr>
+                <td><strong>PHONE :</strong> 9874173373</td>
+                <td>Buyer Name: <strong>LANDMARK GROUP</strong></td>
+            </tr>
+            <tr>
+                <td><strong>FAX :</strong> N.A.</td>
+                <td>Brand Name: <strong>Juniors</strong></td>
+            </tr>
+            <tr>
+                <td><strong>Consignee:-</strong></td>
+                <td>Payment Term: <strong>T/T</strong></td>
+            </tr>
+            <tr>
+                <td>RNA Resources Group Ltd- Landmark (Babyshop),</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>P O Box 25030, Dubai, UAE,</td>
+                <td>Bank Details (Including Swift/IBAN)</td>
+            </tr>
+            <tr>
+                <td>Tel: 00971 4 8095500, Fax: 00971 4 8095555/66</td>
+                <td><strong>:- SAR APPARELS INDIA PVT.LTD</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>:- 2112819952</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>BANK'S NAME :- KOTAK MAHINDRA BANK LTD</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>BANK ADDRESS :- 2 BRABOURNE ROAD, GOVIND BHAVAN, GROUND FLOOR,</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>KOLKATA-700001</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>:- KKBKINBBCPC</strong></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><strong>BANK CODE :- 0323</strong></td>
+            </tr>
+            <tr>
+                <td>Loading Country: India</td>
+                <td>L/C Advicing Bank (If Payment term LC Applicable )</td>
+            </tr>
+            <tr>
+                <td>Port of loading: Mumbai</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>Agreed Shipment Date: 07-02-2025</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td><strong>REMARKS if ANY:-</strong></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>Description of goods: Value Packs</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td><strong>CURRENCY: USD</strong></td>
+                <td></td>
+            </tr>
+        </table>
+
+        <!-- Title -->
+        <div class="title">Proforma Invoice</div>
+
+        <!-- Main Data Table -->
+        <table class="main-table">
+            <thead>
+                <tr>
+                    <th>STYLE NO.</th>
+                    <th>ITEM DESCRIPTION</th>
+                    <th>FABRIC TYPE<br>KNITTED /<br>WOVEN</th>
+                    <th>H.S NO<br>(8digit)</th>
+                    <th>COMPOSITION OF<br>MATERIAL</th>
+                    <th>COUNTRY OF<br>ORIGIN</th>
+                    <th>QTY</th>
+                    <th>UNIT PRICE<br>FOB</th>
+                    <th>AMOUNT</th>
+                </tr>
+            </thead>
+            <tbody>
+                {table_rows}
+                <tr class="total-row">
+                    <td colspan="6" style="text-align: right; font-weight: bold;">Total</td>
+                    <td><strong>{total_qty:,}</strong></td>
+                    <td></td>
+                    <td><strong>{total_amount:.2f}USD</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Total in Words -->
+        <div class="total-words">
+            TOTAL US DOLLAR {total_amount:,.2f} DOLLARS
+        </div>
+
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <table class="signature-table">
+                <tr>
+                    <td style="width: 50%;">Signed by …………………….(Affix Stamp here)</td>
+                    <td style="width: 50%; text-align: right;">for RNA Resources Group Ltd-Landmark (Babyshop)</td>
+                </tr>
+                <tr>
+                    <td colspan="2" style="height: 30px;"></td>
+                </tr>
+                <tr>
+                    <td colspan="2">Terms & Conditions (If Any)</td>
+                </tr>
+            </table>
+        </div>
+    </body>
+    </html>
+    """
     
-    # Create and style the main table
-    main_table = Table(table_data, repeatRows=1)
-    main_table.setStyle(TableStyle([
-        # Header row styling
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
-        
-        # Data rows styling
-        ('FONTSIZE', (0, 1), (-1, -2), 9),
-        ('ALIGN', (0, 1), (-1, -2), 'CENTER'),
-        ('VALIGN', (0, 1), (-1, -2), 'MIDDLE'),
-        
-        # Total row styling
-        ('FONTSIZE', (0, -1), (-1, -1), 10),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ('ALIGN', (0, -1), (-1, -1), 'CENTER'),
-        
-        # Grid lines
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-        ('BOX', (0, 0), (-1, -1), 1, colors.black),
-    ]))
-    
-    elements.append(main_table)
-    elements.append(Spacer(1, 12))
-    
-    # Add total in words
-    def number_to_words(amount):
-        # Simple implementation for demo - you might want to use a library like num2words
-        return f"US DOLLAR {amount:,.2f}"
-    
-    total_words = f"TOTAL {number_to_words(total_amount).upper()} DOLLARS"
-    elements.append(Paragraph(total_words, header_style))
-    elements.append(Spacer(1, 24))
-    
-    # Footer signature section
-    signature_data = [
-        ["Signed by …………………….(Affix Stamp here)", "for RNA Resources Group Ltd-Landmark (Babyshop)"],
-        ["", ""],
-        ["Terms & Conditions (If Any)", ""]
-    ]
-    
-    signature_table = Table(signature_data, colWidths=[4*inch, 4*inch])
-    signature_table.setStyle(TableStyle([
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-    ]))
-    
-    elements.append(signature_table)
-    
-    # Build PDF
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
+    return html_content
 
 # Streamlit App
 def main():
     st.set_page_config(page_title="Proforma Invoice Generator", page_icon="📋", layout="wide")
     
     st.title("📋 Proforma Invoice Generator")
-    
-    # Check if reportlab is available
-    if not REPORTLAB_AVAILABLE:
-        st.error("❌ **ReportLab library is not installed!**")
-        st.markdown("""
-        ### 📦 Installation Required
-        
-        Please install the required dependencies by running these commands:
-        
-        ```bash
-        pip install reportlab==4.0.4
-        pip install pandas==2.0.3
-        pip install openpyxl==3.1.2
-        ```
-        
-        **Or install all at once:**
-        ```bash
-        pip install reportlab pandas openpyxl streamlit
-        ```
-        
-        After installation, restart your Streamlit app.
-        """)
-        st.stop()
-    
-    st.markdown("Upload your Excel file to generate a professional Proforma Invoice PDF")
+    st.markdown("Upload your Excel file to generate a professional Proforma Invoice")
     
     # Sidebar for additional options
     with st.sidebar:
@@ -258,6 +324,7 @@ def main():
                 if missing_columns:
                     st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
                     st.info("📝 Required columns: Style, Description, Composition, USD Fob$, Total Qty, Total Value")
+                    st.write("Available columns:", df.columns.tolist())
                 else:
                     # Show processed data preview
                     processed_df = process_excel_data(df)
@@ -278,30 +345,37 @@ def main():
     with col2:
         st.header("Generate Invoice")
         
-        if uploaded_file is not None and not missing_columns:
-            if st.button("🚀 Generate PDF Invoice", type="primary", use_container_width=True):
+        if uploaded_file is not None and 'missing_columns' in locals() and not missing_columns:
+            if st.button("🚀 Generate Invoice", type="primary", use_container_width=True):
                 try:
-                    with st.spinner("Generating PDF..."):
-                        # Generate PDF
+                    with st.spinner("Generating Invoice..."):
+                        # Generate HTML invoice
                         date_str = invoice_date.strftime("%d-%m-%Y")
-                        pdf_buffer = generate_proforma_invoice(df, pi_number, date_str, cpo_number)
+                        html_content = generate_html_invoice(df, pi_number, date_str, cpo_number)
                         
-                        # Create download button
-                        filename = f"PI_{pi_number.replace('/', '_')}_{date_str}.pdf"
+                        st.success("✅ Invoice Generated Successfully!")
                         
-                        st.success("✅ PDF Generated Successfully!")
+                        # Display the invoice
+                        st.subheader("📋 Proforma Invoice")
+                        st.components.v1.html(html_content, height=800, scrolling=True)
+                        
+                        # Download button
+                        filename = f"PI_{pi_number.replace('/', '_')}_{date_str}.html"
                         st.download_button(
-                            label="📥 Download PDF",
-                            data=pdf_buffer.getvalue(),
+                            label="📥 Download Invoice (HTML)",
+                            data=html_content,
                             file_name=filename,
-                            mime="application/pdf",
-                            use_container_width=True
+                            mime="text/html",
+                            use_container_width=True,
+                            help="Download as HTML file. You can open it in any browser and print/save as PDF using Ctrl+P"
                         )
                         
+                        st.info("💡 **To save as PDF:** Download the HTML file, open it in any browser, then press Ctrl+P (Cmd+P on Mac) and select 'Save as PDF'")
+                        
                 except Exception as e:
-                    st.error(f"❌ Error generating PDF: {str(e)}")
+                    st.error(f"❌ Error generating invoice: {str(e)}")
         else:
-            st.info("📤 Upload a valid Excel file to generate PDF")
+            st.info("📤 Upload a valid Excel file to generate invoice")
 
 if __name__ == "__main__":
     main()
